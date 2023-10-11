@@ -614,6 +614,62 @@ list(abundance = fits.abu,
     lapply(function(a){select(a, -fit, -info)}) %>% 
     writexl::write_xlsx(paste0("diversity.models_", Sys.Date(), ".xlsx"))
 
+# Rarefication ------------------------------------------------------------
+library(parallel)
+cl <- makeCluster(detectCores()-1)
+
+rar <- wide %>% 
+    unite(id, site, year, zone,  sep = "_") %>% 
+    select(-tur, -km, -plot) %>% 
+    group_by(id) %>% 
+    summarise_all(sum) %>% 
+    column_to_rownames("id") %>% 
+    t %>% 
+    as.data.frame() %>% 
+    as.list()
+rar <- rar %>% 
+    .[which(sapply(rar, function(a){length(a[a>0])})>1)] %>% 
+    lapply(function(a){a[a>0]}) %>% 
+    parLapply(cl = cl, ., function(a){
+        a |> 
+            iNEXT::iNEXT(size = seq(0, 200, by = 5), nboot = 0) |>
+            purrr::pluck("iNextEst", "size_based") |> 
+            dplyr::select(m, Method, qD) |> 
+            dplyr::filter(m %in% seq(0, 200, by = 5) | Method == "Observed") 
+    }) %>% 
+    map_df(rbind, .id = "id") %>% 
+    as_tibble() %>% 
+    separate(id, into = c("site", "year", "zone"), sep = "_") %>% 
+    mutate(zone = factor(zone, ordered = TRUE,
+        levels = c("фоновая", "буферная", "импактная", "суперимпактная")))
+
+df <- rar %>% 
+    filter(Method == "Observed") %>% 
+    group_by(year, zone) %>% 
+    summarise(m = mean(m), qD = mean(qD), .groups = "drop") %>% 
+    mutate(m = case_when(m > 200 ~ 200, TRUE ~ m))
+
+rar %>% 
+    filter(m<=200, Method != "Observed") %>% 
+    group_by(year, zone, m) %>% 
+    summarise(ssd = sd(qD), qD = mean(qD), .groups = "drop") %>% 
+    ggplot(aes(x = m, y = qD, 
+               color = zone, fill = zone)) + 
+    facet_wrap(~year) +
+    geom_ribbon(aes(ymin = qD-ssd, ymax = qD+ssd), alpha = 0.2, color = NA) +
+    geom_line() + 
+    geom_point(mapping = aes(x = m, y = qD,  color = zone, fill = zone),
+               data = df) + 
+    scale_color_manual(values = colorRampPalette(c("lightgreen", "red"))(4)) + 
+    scale_fill_manual(values = colorRampPalette(c("lightgreen", "red"))(4))
+
+# Dominant species --------------------------------------------------------
+wide %>% 
+    select(id:plot, Pterostichus_oblongopunctatus) %>% 
+    # mutate(Pterostichus_oblongopunctatus = log(Pterostichus_oblongopunctatus+1)) %>%
+    mutate(Pterostichus_oblongopunctatus = MASS::boxcox(wide$Pterostichus_oblongopunctatus)) %>%
+pull(Pterostichus_oblongopunctatus) %>% shapiro.test() 
+
 # Models analysis ---------------------------------------------------------
 
 
