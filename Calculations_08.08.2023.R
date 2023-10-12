@@ -650,7 +650,8 @@ df <- rar %>%
     mutate(m = case_when(m > 200 ~ 200, TRUE ~ m))
 
 rar %>% 
-    filter(m<=200, Method != "Observed") %>% 
+    filter(m<=200, Method != "Observed" | zone == "суперимпактная") %>% 
+    filter(zone != "суперимпактная" | Method != "Extrapolation") %>% 
     group_by(year, zone, m) %>% 
     summarise(ssd = sd(qD), qD = mean(qD), .groups = "drop") %>% 
     ggplot(aes(x = m, y = qD, 
@@ -659,9 +660,12 @@ rar %>%
     geom_ribbon(aes(ymin = qD-ssd, ymax = qD+ssd), alpha = 0.2, color = NA) +
     geom_line() + 
     geom_point(mapping = aes(x = m, y = qD,  color = zone, fill = zone),
-               data = df) + 
-    scale_color_manual(values = colorRampPalette(c("lightgreen", "red"))(4)) + 
-    scale_fill_manual(values = colorRampPalette(c("lightgreen", "red"))(4))
+               data = df, shape = 22) + 
+    scale_color_manual(values = c("darkgreen", "#ccff00", "#ff9900", "#FF3300")) +
+    scale_fill_manual(values = c("darkgreen", "#ccff00", "#ff9900", "#FF3300")) +
+    labs(x = "Individuals", y = "Species") + 
+    theme(panel.grid = element_blank())
+ggsave("Raref.png", width = 10, height = 5.5, dpi = 600)
 
 # Dominant species --------------------------------------------------------
 wide %>% 
