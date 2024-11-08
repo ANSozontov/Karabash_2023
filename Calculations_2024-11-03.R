@@ -475,6 +475,8 @@ fits.nsp <- fits.nsp %>%
 
 # writexl::write_xlsx(fits.nsp, paste0("Модели_все_", Sys.Date(), ".xlsx"))
 
+# кусочно-линейная регрессия
+
 lm_shan <- lm(shan ~ km, data = div1)
 summary(lm_shan)
 x2_shan <- lm(shan ~ km + km2, data = mutate(div1, km2 = km^2))
