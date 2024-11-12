@@ -595,15 +595,16 @@ eig <- round(eig/sum(eig)*100, 1)
 pc <- pc$vectors %>% 
     as.data.frame() %>% 
     rownames_to_column("ID") %>% 
-    select(1:3) %>% 
+    as_tibble()
+
+pc %>% 
+    # select(1:3) %>% 
     separate(ID, into = c("year", "zone", "site", "plot"), 
              sep = "_") %>% 
-    as_tibble() %>% 
     mutate(#zone = str_replace_all(zone, "ая", "ый"),
            zone = factor(zone, levels = c("фоновая", "буферная", "импактная")),
-           zone = fct_relabel(zone, ~paste0(.x, " территория")))
-
-ggplot(pc, aes(x = Axis.1, y = Axis.2, linetype = year,
+           zone = fct_relabel(zone, ~paste0(.x, " территория"))) %>% 
+ggplot(aes(x = Axis.1, y = Axis.2, linetype = year,
                fill = zone, color = zone, shape = year)) +
     geom_point(color = "black", size = 2.5) +  
     stat_ellipse() + 
@@ -635,10 +636,14 @@ m2 <- m %>%
     separate(id2, c("year2", "zone2"), sep = "_", extra = "drop")
 
 # zone + year
-m2 %>% 
+res <- list()
+res$within_raw <- m2 %>% 
     filter(year1 == year2, zone1 == zone2) %>% 
-    group_by(year1, zone1) %>% 
-    summarise(dis = mean(dis), .groups = "drop")
+    transmute(i = paste0(substr(zone1, 1,3), "_", year1), dis) %>% 
+    group_by(i) %>% 
+    summarise(dis = mean(dis), .groups = "drop") %>% 
+    mutate(i = factor(i, levels = c("фон_2009", "фон_2014", "буф_2009", "буф_2014", "имп_2009", "имп_2014" ))) %>% 
+    arrange(i)
 
 m2 %>% 
     filter(year1 != year2 | zone1 != zone2) %>% 
@@ -660,6 +665,48 @@ m2 %>%
     filter(zone1 != zone2) %>% 
     group_by(zone1, zone2) %>% 
     summarise(dis = mean(dis), .groups = "drop")
+
+
+# dis other way -----------------------------------------------------------
+res$within_2.axes <- pc %>% 
+    group_by(year, zone) %>% 
+    mutate(Axis.1m = mean(Axis.1), Axis.2m = mean(Axis.2)) %>% 
+    mutate(zone = substr(zone, 1, 3), 
+           d = sqrt((Axis.1-Axis.1m)^2 + (Axis.2-Axis.2m)^2)) %>% 
+    summarise(d = mean(d), .groups = "drop") %>% 
+    unite("i", zone, year, sep = "_") %>% 
+    mutate(i = factor(i, levels = c("фон_2009", "фон_2014", "буф_2009", "буф_2014", "имп_2009", "имп_2014" ))) %>% 
+    arrange(i)
+
+m3 <- pc %>% 
+    column_to_rownames("ID") %>% 
+    dist() %>% 
+    as.matrix()
+
+m3[upper.tri(m3)] <- NA
+diag(m3) <- NA
+m3 <- m3 %>% 
+    as.data.frame() %>% 
+    rownames_to_column("id1") %>% 
+    as_tibble() %>% 
+    pivot_longer(names_to = "id2", values_to = "dis", -id1) %>% 
+    filter(!is.na(dis)) %>% 
+    separate(id1, c("year1", "zone1"), sep = "_", extra = "drop") %>% 
+    separate(id2, c("year2", "zone2"), sep = "_", extra = "drop")
+
+
+
+
+    mutate(ID = paste0(substr(ID, 6, 9)), substr(ID, 6, 9)), 
+
+pc
+
+    ungroup() %>% 
+    mutate(i = paste0(substr(zone, 1,3), "_", year), .keep = "unused") %>% 
+    column_to_rownames("i") %>% 
+    dist()
+
+
 
 # export ------------------------------------------------------------------
 list(abundance = fits.abu, 
