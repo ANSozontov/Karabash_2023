@@ -647,13 +647,20 @@ res$within_raw <- m2 %>%
 
 m2 %>% 
     filter(year1 != year2 | zone1 != zone2) %>% 
-    group_by(year1, zone1, year2, zone2) %>% 
-    summarise(dis = mean(dis), .groups = "drop") %>% 
-    mutate(id1 = paste0(year1, "_", zone1), 
-           id2 = paste0(year2, "_", zone2), 
+    # group_by(year1, zone1, year2, zone2) %>% 
+    # summarise(dis = mean(dis), .groups = "drop") %>% 
+    mutate(id1 = paste0(substr(zone1, 1, 3), "_", year1), 
+           id2 = paste0(substr(zone2, 1, 3), "_", year2), 
            .keep = "unused") %>% 
-    mutate_at(2:3, function(a){substr(a, 1, 8)}) %>% 
-    pivot_wider(names_from = id2, values_from = dis)
+    mutate(ID1 = min(id1, id2), ID2 = max(id1, id2), .keep = "unused") %>% 
+    mutate_at(2:3, function(a)factor(a, levels = c(
+        "фон_2009", "фон_2014", "буф_2009", "буф_2014", "имп_2009", "имп_2014"
+    ))) 
+    # arrange(desc(id1), id2)
+    # mutate_at(2:3, function(a){substr(a, 1, 8)}) %>% 
+    pivot_wider(names_from = ID2, values_from = dis, 
+                values_fill = NA, values_fn = mean) 
+    arrange(ID1)
 
 # zone
 m2 %>% 
@@ -669,6 +676,8 @@ m2 %>%
 
 # dis other way -----------------------------------------------------------
 res$within_2.axes <- pc %>% 
+    separate(ID, into = c("year", "zone", "site", "plot"), 
+             sep = "_") %>% 
     group_by(year, zone) %>% 
     mutate(Axis.1m = mean(Axis.1), Axis.2m = mean(Axis.2)) %>% 
     mutate(zone = substr(zone, 1, 3), 
@@ -694,6 +703,13 @@ m3 <- m3 %>%
     separate(id1, c("year1", "zone1"), sep = "_", extra = "drop") %>% 
     separate(id2, c("year2", "zone2"), sep = "_", extra = "drop")
 
+res$within_all.axes <- m3 %>% 
+    filter(year1 == year2, zone1 == zone2) %>% 
+    transmute(i = paste0(substr(zone1, 1,3), "_", year1), dis) %>% 
+    group_by(i) %>% 
+    summarise(dis = mean(dis), .groups = "drop") %>% 
+    mutate(i = factor(i, levels = c("фон_2009", "фон_2014", "буф_2009", "буф_2014", "имп_2009", "имп_2014" ))) %>% 
+    arrange(i)
 
 
 
