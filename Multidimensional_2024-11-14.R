@@ -7,7 +7,7 @@ theme_set(
             legend.position = "bottom"
         )
 )
-
+L <- c("фон_2009", "фон_2014", "буф_2009", "буф_2014", "имп_2009", "имп_2014")
 long <- readxl::read_excel("Data/Carabidae_25.01.2023.xlsx", 
                            sheet = "main_data") %>% 
     select(-duration, -traps) %>% 
@@ -99,49 +99,33 @@ distances <- list(
         m <- as.matrix(m)
         m[upper.tri(m)] <- NA
         diag(m) <- NA
-        m %>% # raw distances
+        m %>% 
             as.data.frame() %>% 
             rownames_to_column("id1") %>% 
             as_tibble() %>% 
             pivot_longer(names_to = "id2", values_to = "dis", -id1) %>% 
             filter(!is.na(dis)) %>% 
             separate(id1, c("zone1", "year1"), sep = "_", extra = "drop") %>% 
-            separate(id2, c("zone2", "year2"), sep = "_", extra = "drop")
+            separate(id2, c("zone2", "year2"), sep = "_", extra = "drop") %>% 
+            mutate(
+                id1 = factor(paste0(zone1, "_", year1), levels = L, ordered = TRUE),
+                id2 = factor(paste0(zone2, "_", year2), levels = L, ordered = TRUE),
+                .keep = "unused") %>%  
+            split(1:nrow(.)) %>% 
+                lapply(function(x){
+                    if(x$id1 > x$id2) {
+                        tibble(dis = x$dis, id1 = x$id2, id2 = x$id1)
+                    } else {
+                        tibble(dis = x$dis, id1 = x$id1, id2 = x$id2)
+                    }
+                }) %>% 
+            map_dfr(rbind) %>% 
+            pivot_wider(
+                names_from = id2, values_from = dis, 
+                values_fill = NA, values_fn = mean)
     })
+distances %>% 
+    map(~mutate_if(.x, is.numeric, function(a){round(a, 2)})) %>% 
+    writexl::write_xlsx("distances.xlsx")
 
-res <- distances %>% 
-    map(~.x %>% 
-        filter(year1 == year2, zone1 == zone2) %>% 
-        unite("i", zone1, year1) %>% 
-        group_by(i) %>% 
-        summarise(dis = mean(dis), .groups = "drop") %>% 
-        mutate(i = factor(i, levels = c("фон_2009", "фон_2014", "буф_2009", "буф_2014", "имп_2009", "имп_2014" ))) %>% 
-        arrange(i)
-    ) %>% 
-    `names<-`(paste0("within_", substr(names(.), 4, nchar(names(.)))))
-
-
-distances <- distances %>% map(~.x %>% 
-                      filter(year1 != year2 | zone1 != zone2) %>% 
-                      mutate(id1 = paste0(zone1, "_", year1), 
-                             id2 = paste0(zone2, "_", year2), 
-                             .keep = "unused") %>% 
-                      split(1:nrow(.)) %>% 
-                      lapply(function(x){
-                          if(x$id1 > x$id2) {
-                              tibble(dis = x$dis, id1 = x$id2, id2 = x$id1)
-                          } else {
-                              tibble(dis = x$dis, id1 = x$id1, id2 = x$id2)
-                          }
-                      }) %>% 
-                      map_dfr(rbind) %>% 
-                      pivot_wider(names_from = id2, values_from = dis, 
-                                  values_fill = NA, values_fn = mean) %>% 
-                      arrange(id1) %>% 
-                      select(id1, буф_2014, имп_2009, имп_2014, фон_2009, фон_2014)
-) %>% 
-    `names<-`(paste0("between_", substr(names(.), 4, nchar(names(.))))) %>% 
-    append(res, .)
-
-writexl::write_xlsx(distances, "distances.xlsx")
-
+# ADD PERMANOVA!11!1
