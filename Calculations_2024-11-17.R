@@ -177,33 +177,48 @@ ggsave("Plot4.svg", width = 16, height = 11*0.6, units = "cm")
 
 # Abundance models selection ---------------------------------------------------
 fits.abu <- expand_grid(
-    yy = "abu",
-    xx = paste0("year"), 
-    zz = c(" + site", " + km", " + zone"),
-    super_imp = c("S.I.", ""),
-    distr = c("poisson", "quasipoisson",  "gaussian"),
-    tt = c("", " * tur"), 
-    # tursum = c(TRUE, FALSE),
-    # lg = c(TRUE, FALSE)
+    # yy = "abu",
+    ff = c("year", "year + zone", "year + km", "year + km_log"),
+    tt = "", #c("tur_united", "", " + tur"), 
+    # учитывать туры лучше, чем не учитывать
+    # но объединять ещё лучше, чем учитывать
+    super_imp = c(""), #"s.i._excl.", 
+    # суперимпакт лучше не исключать, с ним r2 лучше (0.4 -> 0.5)
+    distr = c("gaussian") # "poisson", "quasipoisson", 
+    # if gaussian then log = true
+    # poisson is removed: it produces the same r2 with a little bigger AIC
+    # but its almost always doesn't pass via overdispersion test
+    # quasipoisson is removed: AIC is incredibly high (in comp. with gauss.)
+    # and shapiro test for residuals fails
 ) %>% 
-    mutate(lg = case_when(distr != "gaussian" ~ FALSE, TRUE ~ TRUE)) %>% 
-    mutate(xx = paste0(xx, tt, zz), .keep = "unused") %>% 
-    unite(ff, yy, xx, sep = "~ ") %>%  
-    mutate(nm = paste0(ff, "_", super_imp, "_", distr))
+    mutate(
+        ff = case_when(tt == " + tur" ~ paste0(ff, tt), TRUE ~ ff), 
+        ff = paste0("abu ~ ", ff), 
+        tt = case_when(str_detect(tt, "uni") ~ tt, TRUE ~ "")
+        ) %>% 
+    mutate(nm = paste0(ff, "_", tt, "_", super_imp, "_", distr))
 
 fits.abu <- fits.abu %>% 
     split(1:nrow(.)) %>% 
     lapply(function(a){ 
-        # if(a$tursum){df <- div2} else {df <- div}
-        df <- div
-        if(a$super_imp != "S.I."){ 
+        if(a$tt == "tur_united"){df <- div2} else {df <- div}
+        if(a$super_imp == "s.i._excl."){ 
             df <- filter(df, zone != "суперимпактная")
         }
-        if(a$lg){df <- mutate(df, abu = log(abu+1))}
-        glm(formula = a$ff, data = df, family = a$distr)
+        if(a$distr == "gaussian"){df <- mutate(df, abu = log10(abu+1))}
+        ff <- a$ff
+        if(str_detect(ff, "km_log")){
+            ff <- str_replace_all(ff, "km_log", "km")
+            df <- mutate(df, km = log10(km))
+        }
+        if(str_detect(ff, "km_sqrt")){
+            ff <- str_replace_all(ff, "km_sqrt", "km")
+            df <- mutate(df, km = sqrt(km))
+        }
+        glm(formula = ff, data = df, family = a$distr)
     }) %>% 
     `names<-`(fits.abu$nm) %>% 
-    mutate(fits.abu, fit = ., info = lapply(., summary)) 
+    mutate(fits.abu, fit = ., info = lapply(., summary))
 
 fits.abu <- fits.abu %>% 
     pull(fit) %>% 
@@ -232,6 +247,22 @@ fits.abu <- fits.abu %>%
     map_df(rbind, .id = "nm") %>% 
     left_join(fits.abu, ., by = "nm") %>% 
     mutate(aic = case_when(is.na(aic) ~ aic2, TRUE ~ aic), .keep = "unused")
+
+list(
+    lm = lm(abu ~ km, data = mutate(div2, abu = log(abu+1))), 
+    x2 = lm(abu ~ km + km2, data = mutate(div2, abu = log(abu+1), km2 = km^2)),
+    x12= lm(abu ~ km + km12, data = mutate(div2, abu = log(abu+1), km12 = sqrt(km))),
+    seg= segmented::segmented(lm(abu ~ km, data = mutate(div2, abu = log(abu+1))), seg.Z = ~km)
+) %>% 
+    map(~tibble(aic = AIC(.x), r2 = summary(.x)$r.squared))
+    
+summary(lm_shan)
+
+summary(x2_shan)
+seg_shan <- 
+summary(seg_shan)
+
+fits.abu %>% select(-fit, -info, -var.res, -var.ftd, -overdispersion) %>% writexl::write_xlsx("tmp.xlsx")
 
 fits.abu %>% 
     filter(str_detect(ff, "site")) %>%
